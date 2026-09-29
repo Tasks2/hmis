@@ -9,7 +9,7 @@ import (
 
 	"github.com/Tasks2/hmis/internal/config"
 	"github.com/Tasks2/hmis/internal/database"
-	"github.com/Tasks2/hmis/internal/handlers"
+	"github.com/Tasks2/hmis/internal/router"
 	"github.com/joho/godotenv"
 )
 
@@ -34,13 +34,11 @@ func main() {
 	}
 	defer db.Close()
 
-	mux := http.NewServeMux()
-
-	mux.HandleFunc("/health", handlers.Health(db))
+	appRouter := router.New(db)
 
 	server := &http.Server{
 		Addr:    ":" + cfg.Port,
-		Handler: mux,
+		Handler: appRouter,
 	}
 
 	log.Printf("HMIS API listening on http://localhost:%s", cfg.Port)
