@@ -36,7 +36,7 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/health", handlers.Health)
+	mux.HandleFunc("/health", handlers.Health(db))
 
 	server := &http.Server{
 		Addr:    ":" + cfg.Port,
