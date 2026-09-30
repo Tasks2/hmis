@@ -9,15 +9,18 @@ import (
 
 	"github.com/Tasks2/hmis/internal/config"
 	"github.com/Tasks2/hmis/internal/database"
+	"github.com/Tasks2/hmis/internal/logger"
+	"github.com/Tasks2/hmis/internal/middleware"
 	"github.com/Tasks2/hmis/internal/router"
 	"github.com/joho/godotenv"
 )
 
 func main() {
+	appLogger := logger.New()
 
 	err := godotenv.Load()
 	if err != nil {
-		log.Println("No .env file found; using environment variables")
+		appLogger.Info.Println("No .env file found; using environment variables")
 	}
 
 	cfg, err := config.Load()
@@ -38,7 +41,7 @@ func main() {
 
 	server := &http.Server{
 		Addr:    ":" + cfg.Port,
-		Handler: appRouter,
+		Handler: middleware.RequestLogger(appRouter),
 	}
 
 	log.Printf("HMIS API listening on http://localhost:%s", cfg.Port)
