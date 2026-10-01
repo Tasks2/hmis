@@ -9,9 +9,11 @@ import (
 
 	"github.com/Tasks2/hmis/internal/config"
 	"github.com/Tasks2/hmis/internal/database"
+	"github.com/Tasks2/hmis/internal/handlers"
 	"github.com/Tasks2/hmis/internal/logger"
 	"github.com/Tasks2/hmis/internal/middleware"
 	"github.com/Tasks2/hmis/internal/router"
+	"github.com/Tasks2/hmis/internal/services"
 	"github.com/joho/godotenv"
 )
 
@@ -37,7 +39,20 @@ func main() {
 	}
 	defer db.Close()
 
-	appRouter := router.New(db)
+	appLogger.Info.Println("Database connection established")
+
+	//Services
+	authService := services.NewAuthService(db)
+	jwtService := services.NewJWTService(cfg.JWTSecret)
+	practitionerService := services.NewPractitionerService(db)
+	appointmentService := services.NewAppointmentService(db)
+
+	//Handlers
+	authHandler := handlers.NewAuthHandler(authService, jwtService)
+	practitionerHandler := handlers.NewPractitionerHandler(practitionerService)
+	appointmentHandler := handlers.NewAppointmentHandler(appointmentService)
+
+	appRouter := router.New(db, authHandler, practitionerHandler, appointmentHandler, cfg.JWTSecret)
 
 	server := &http.Server{
 		Addr:    ":" + cfg.Port,
