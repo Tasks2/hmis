@@ -5,7 +5,9 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/Tasks2/hmis/internal/response"
 	"github.com/Tasks2/hmis/internal/services"
+	"github.com/Tasks2/hmis/internal/validation"
 )
 
 type RegisterRequest struct {
@@ -40,14 +42,52 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Email == "" ||
-		req.Password == "" ||
-		req.FirstName == "" ||
-		req.LastName == "" {
-		http.Error(
+	if !validation.Required(req.Email) {
+		response.JSONError(
 			w,
-			"email, password, first_name and last_name are required",
 			http.StatusBadRequest,
+			"EMAIL_REQUIRED",
+			"email is required",
+		)
+		return
+	}
+
+	if !validation.Email(req.Email) {
+		response.JSONError(
+			w,
+			http.StatusBadRequest,
+			"INVALID_EMAIL",
+			"email is invalid",
+		)
+		return
+	}
+
+	if !validation.Required(req.Password) {
+		response.JSONError(
+			w,
+			http.StatusBadRequest,
+			"PASSWORD_REQUIRED",
+			"password is required",
+		)
+		return
+	}
+
+	if !validation.Required(req.FirstName) {
+		response.JSONError(
+			w,
+			http.StatusBadRequest,
+			"FIRST_NAME_REQUIRED",
+			"first_name is required",
+		)
+		return
+	}
+
+	if !validation.Required(req.LastName) {
+		response.JSONError(
+			w,
+			http.StatusBadRequest,
+			"LAST_NAME_REQUIRED",
+			"last_name is required",
 		)
 		return
 	}
@@ -60,6 +100,16 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		req.LastName,
 	)
 
+	if errors.Is(err, services.ErrEmailExists) {
+		response.JSONError(
+			w,
+			http.StatusConflict,
+			"EMAIL_EXISTS",
+			"email already exists",
+		)
+		return
+	}
+
 	if err != nil {
 		http.Error(
 			w,
@@ -69,12 +119,13 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-
-	json.NewEncoder(w).Encode(map[string]string{
-		"message": "patient registered successfully",
-	})
+	response.JSON(
+		w,
+		http.StatusCreated,
+		map[string]string{
+			"message": "patient registered successfully",
+		},
+	)
 }
 
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
@@ -90,11 +141,32 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Email == "" || req.Password == "" {
-		http.Error(
+	if !validation.Required(req.Email) {
+		response.JSONError(
 			w,
-			"email and password are required",
 			http.StatusBadRequest,
+			"EMAIL_REQUIRED",
+			"email is required",
+		)
+		return
+	}
+
+	if !validation.Email(req.Email) {
+		response.JSONError(
+			w,
+			http.StatusBadRequest,
+			"INVALID_EMAIL",
+			"email is invalid",
+		)
+		return
+	}
+
+	if !validation.Required(req.Password) {
+		response.JSONError(
+			w,
+			http.StatusBadRequest,
+			"PASSWORD_REQUIRED",
+			"password is required",
 		)
 		return
 	}

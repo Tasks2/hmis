@@ -36,41 +36,46 @@ func New(db *pgxpool.Pool,
 
 	//Appointments
 	protected := middleware.JWTAuth(jwtSecret)
+	patientOnly := middleware.RequireRole("PATIENT")
 
 	mux.Handle(
 		"/api/v1/appointments",
 		protected(
-			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				switch r.Method {
-				case http.MethodPost:
-					appHandler.Create(w, r)
+			patientOnly(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					switch r.Method {
+					case http.MethodPost:
+						appHandler.Create(w, r)
 
-				case http.MethodGet:
-					appHandler.List(w, r)
+					case http.MethodGet:
+						appHandler.List(w, r)
 
-				default:
-					http.NotFound(w, r)
-				}
-			}),
+					default:
+						http.NotFound(w, r)
+					}
+				}),
+			),
 		),
 	)
 
 	mux.Handle(
 		"/api/v1/appointments/",
 		protected(
-			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			patientOnly(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
-				switch r.Method {
-				case http.MethodDelete:
-					appHandler.Cancel(w, r)
+					switch r.Method {
+					case http.MethodDelete:
+						appHandler.Cancel(w, r)
 
-				case http.MethodPatch:
-					appHandler.Reschedule(w, r)
+					case http.MethodPatch:
+						appHandler.Reschedule(w, r)
 
-				default:
-					http.NotFound(w, r)
-				}
-			}),
+					default:
+						http.NotFound(w, r)
+					}
+				}),
+			),
 		),
 	)
 

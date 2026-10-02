@@ -2,10 +2,10 @@ package middleware
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"strings"
 
+	"github.com/Tasks2/hmis/internal/response"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -22,10 +22,11 @@ func JWTAuth(secret string) func(http.Handler) http.Handler {
 			authHeader := r.Header.Get("Authorization")
 
 			if authHeader == "" {
-				http.Error(
+				response.JSONError(
 					w,
-					"missing authorization header",
 					http.StatusUnauthorized,
+					"UNAUTHORIZED",
+					"authorization header is required",
 				)
 				return
 			}
@@ -33,10 +34,11 @@ func JWTAuth(secret string) func(http.Handler) http.Handler {
 			parts := strings.SplitN(authHeader, " ", 2)
 
 			if len(parts) != 2 || parts[0] != "Bearer" {
-				http.Error(
+				response.JSONError(
 					w,
-					"invalid authorization header",
 					http.StatusUnauthorized,
+					"INVALID_AUTH_HEADER",
+					"authorization header must use Bearer token format",
 				)
 				return
 			}
@@ -45,33 +47,50 @@ func JWTAuth(secret string) func(http.Handler) http.Handler {
 				parts[1],
 				func(token *jwt.Token) (interface{}, error) {
 					if token.Method != jwt.SigningMethodHS256 {
-						return nil, errors.New("unexpected signing method")
+						response.JSONError(
+							w,
+							http.StatusUnauthorized,
+							"INVALID_TOKEN",
+							"invalid token signing method",
+						)
 					}
 					return []byte(secret), nil
 				},
 			)
 
 			if err != nil || !token.Valid {
-				http.Error(
+				response.JSONError(
 					w,
-					"invalid or expired token",
 					http.StatusUnauthorized,
+					"INVALID_TOKEN",
+					"token is invalid or expired",
 				)
 				return
 			}
 
 			claims, ok := token.Claims.(jwt.MapClaims)
 			if !ok {
-				http.Error(
+				response.JSONError(
 					w,
-					"invalid token claims",
 					http.StatusUnauthorized,
+					"INVALID_TOKEN_CLAIMS",
+					"token claims are invalid",
 				)
 				return
 			}
 
 			userID, _ := claims["sub"].(string)
 			role, _ := claims["role"].(string)
+
+			if userID == "" || role == "" {
+				response.JSONError(
+					w,
+					http.StatusUnauthorized,
+					"INVALID_TOKEN_CLAIMS",
+					"token claims are invalid",
+				)
+				return
+			}
 
 			ctx := context.WithValue(
 				r.Context(),
@@ -86,6 +105,36 @@ func JWTAuth(secret string) func(http.Handler) http.Handler {
 			)
 
 			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
+func RequireRole(requiredRole string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			role, ok := r.Context().Value(RoleKey).(string)
+
+			if !ok || role == "" {
+				response.JSONError(
+					w,
+					http.StatusForbidden,
+					"FORBIDDEN",
+					"role is required",
+				)
+				return
+			}
+
+			if role != requiredRole {
+				response.JSONError(
+					w,
+					http.StatusForbidden,
+					"FORBIDDEN",
+					"insufficient permissions",
+				)
+				return
+			}
+
+			next.ServeHTTP(w, r)
 		})
 	}
 }

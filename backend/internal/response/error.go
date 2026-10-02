@@ -6,24 +6,40 @@ import (
 )
 
 type ErrorResponse struct {
-	Error ErrorDetail `json:"error"`
+	Error ErrorBody `json:"error"`
 }
 
-type ErrorDetail struct {
+type ErrorBody struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
 }
 
-func JSONError(w http.ResponseWriter, status int, code string, message string) {
+func JSONError(
+	w http.ResponseWriter,
+	status int,
+	code string,
+	message string,
+) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 
-	response := ErrorResponse{
-		Error: ErrorDetail{
-			Code:    code,
-			Message: message,
+	_ = json.NewEncoder(w).Encode(
+		ErrorResponse{
+			Error: ErrorBody{
+				Code:    code,
+				Message: message,
+			},
 		},
-	}
+	)
+}
 
-	json.NewEncoder(w).Encode(response)
+func JSON(
+	w http.ResponseWriter,
+	status int,
+	data interface{},
+) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+
+	_ = json.NewEncoder(w).Encode(data)
 }

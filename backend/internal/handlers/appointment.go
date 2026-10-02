@@ -8,7 +8,9 @@ import (
 	"time"
 
 	"github.com/Tasks2/hmis/internal/middleware"
+	"github.com/Tasks2/hmis/internal/response"
 	"github.com/Tasks2/hmis/internal/services"
+	"github.com/Tasks2/hmis/internal/validation"
 )
 
 type AppointmentHandler struct {
@@ -48,33 +50,96 @@ func (h *AppointmentHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	userID, ok := getUserID(r)
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		response.JSONError(
+			w,
+			http.StatusUnauthorized,
+			"UNAUTHORIZED",
+			"authentication is required",
+		)
 		return
 	}
 
 	var req CreateAppointmentRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	if req.PractitionerID == "" ||
-		req.AppointmentDate == "" ||
-		req.StartTime == "" {
-
-		http.Error(
+		response.JSONError(
 			w,
-			"practitioner_id, appointment_date and start_time are required",
 			http.StatusBadRequest,
+			"INVALID_REQUEST",
+			"invalid request body",
 		)
 		return
 	}
 
-	date, err := time.Parse("2006-01-02", req.AppointmentDate)
+	if !validation.Required(req.PractitionerID) {
+		response.JSONError(
+			w,
+			http.StatusBadRequest,
+			"PRACTITIONER_ID_REQUIRED",
+			"practitioner_id is required",
+		)
+		return
+	}
+
+	if !validation.Required(req.AppointmentDate) {
+		response.JSONError(
+			w,
+			http.StatusBadRequest,
+			"DATE_REQUIRED",
+			"appointment_date is required",
+		)
+		return
+	}
+
+	if !validation.Required(req.StartTime) {
+		response.JSONError(
+			w,
+			http.StatusBadRequest,
+			"TIME_REQUIRED",
+			"start_time is required",
+		)
+		return
+	}
+
+	date, err := validation.Date(req.AppointmentDate)
 
 	if err != nil {
-		http.Error(w, "invalid appointment date", http.StatusBadRequest)
+		response.JSONError(
+			w,
+			http.StatusBadRequest,
+			"INVALID_DATE",
+			"appointment_date must use YYYY-MM-DD format",
+		)
+		return
+	}
+
+	if !validation.Required(req.PractitionerID) {
+		response.JSONError(
+			w,
+			http.StatusBadRequest,
+			"PRACTITIONER_ID_REQUIRED",
+			"practitioner_id is required",
+		)
+		return
+	}
+
+	if !validation.Required(req.AppointmentDate) {
+		response.JSONError(
+			w,
+			http.StatusBadRequest,
+			"DATE_REQUIRED",
+			"appointment_date is required",
+		)
+		return
+	}
+
+	if !validation.Required(req.StartTime) {
+		response.JSONError(
+			w,
+			http.StatusBadRequest,
+			"TIME_REQUIRED",
+			"start_time is required",
+		)
 		return
 	}
 

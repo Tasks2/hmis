@@ -12,9 +12,11 @@ import (
 )
 
 var (
-	ErrSlotUnavailable     = errors.New("appointment slot is unavailable")
-	ErrPatientNotFound     = errors.New("patient not found")
-	ErrAppointmentNotFound = errors.New("appointment not found")
+	ErrSlotUnavailable      = errors.New("appointment slot is unavailable")
+	ErrPatientNotFound      = errors.New("patient not found")
+	ErrAppointmentNotFound  = errors.New("appointment not found")
+	ErrPractitionerNotFound = errors.New("practitioner not found")
+	ErrScheduleUnavailable  = errors.New("schedule unavailable")
 )
 
 type Appointment struct {
