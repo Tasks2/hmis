@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/Tasks2/hmis/internal/validation"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -17,6 +18,7 @@ var (
 	ErrAppointmentNotFound  = errors.New("appointment not found")
 	ErrPractitionerNotFound = errors.New("practitioner not found")
 	ErrScheduleUnavailable  = errors.New("schedule unavailable")
+	ErrPastAppointment      = errors.New("appointment date is in the past")
 )
 
 type Appointment struct {
@@ -89,6 +91,15 @@ func (s *AppointmentService) Create(
 
 	if err != nil {
 		return fmt.Errorf("calculate appointment end time: %w", err)
+	}
+
+	if err := s.validateSlot(
+		ctx,
+		practitionerID,
+		appointmentDate,
+		startTime,
+	); err != nil {
+		return err
 	}
 
 	_, err = s.db.Exec(
@@ -217,6 +228,7 @@ func (s *AppointmentService) Reschedule(
 	return nil
 }
 
+// Get Appointments
 func (s *AppointmentService) GetPatientAppointments(
 	ctx context.Context,
 	userID string,
@@ -279,4 +291,132 @@ func (s *AppointmentService) GetPatientAppointments(
 	}
 
 	return appointments, rows.Err()
+}
+
+// Schedule Validation Helper
+func (s *AppointmentService) validateSlot(
+	ctx context.Context,
+	practitionerID string,
+	appointmentDate time.Time,
+	startTime string,
+) error {
+	var practitionerExists bool
+
+	err := s.db.QueryRow(
+		ctx,
+		`SELECT EXISTS(
+			SELECT 1
+			FROM practitioners
+			WHERE id = $1
+		)`,
+		practitionerID,
+	).Scan(&practitionerExists)
+
+	if err != nil {
+		return fmt.Errorf("check practitioner: %w", err)
+	}
+
+	if !practitionerExists {
+		return ErrPractitionerNotFound
+	}
+
+	today := time.Now()
+
+	requestedDate := appointmentDate.Format("2006-01-02")
+	currentDate := today.Format("2006-01-02")
+
+	if requestedDate < currentDate {
+		return ErrPastAppointment
+	}
+
+	requestedStart, err := time.Parse("15:04", startTime)
+	if err != nil {
+		return validation.ErrInvalidTime
+	}
+
+	if !validation.Is30MinuteSlot(startTime) {
+		return validation.ErrInvalidSlot
+	}
+
+	requestedEnd := requestedStart.Add(30 * time.Minute)
+
+	rows, err := s.db.Query(
+		ctx,
+		`SELECT start_time, end_time, slot_duration_minutes
+		 FROM schedules
+		 WHERE practitioner_id = $1
+		   AND schedule_date = $2`,
+		practitionerID,
+		appointmentDate,
+	)
+	if err != nil {
+		return fmt.Errorf("query practitioner schedule: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var scheduleStart time.Time
+		var scheduleEnd time.Time
+		var duration int
+
+		if err := rows.Scan(
+			&scheduleStart,
+			&scheduleEnd,
+			&duration,
+		); err != nil {
+			return fmt.Errorf("scan practitioner schedule: %w", err)
+		}
+
+		// V1 uses fixed 30-minute appointment slots.
+		if duration != 30 {
+			continue
+		}
+
+		scheduleStartTime := time.Date(
+			0, 1, 1,
+			scheduleStart.Hour(),
+			scheduleStart.Minute(),
+			0,
+			0,
+			time.UTC,
+		)
+
+		scheduleEndTime := time.Date(
+			0, 1, 1,
+			scheduleEnd.Hour(),
+			scheduleEnd.Minute(),
+			0,
+			0,
+			time.UTC,
+		)
+
+		requestedStartTime := time.Date(
+			0, 1, 1,
+			requestedStart.Hour(),
+			requestedStart.Minute(),
+			0,
+			0,
+			time.UTC,
+		)
+
+		requestedEndTime := time.Date(
+			0, 1, 1,
+			requestedEnd.Hour(),
+			requestedEnd.Minute(),
+			0,
+			0,
+			time.UTC,
+		)
+
+		if !requestedStartTime.Before(scheduleStartTime) &&
+			!requestedEndTime.After(scheduleEndTime) {
+			return nil
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate practitioner schedule: %w", err)
+	}
+
+	return ErrScheduleUnavailable
 }

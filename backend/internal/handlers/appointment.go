@@ -157,10 +157,44 @@ func (h *AppointmentHandler) Create(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "patient not found", http.StatusNotFound)
 
 		case errors.Is(err, services.ErrSlotUnavailable):
-			http.Error(w, "appointment slot unavailable", http.StatusConflict)
+			response.JSONError(
+				w,
+				http.StatusConflict,
+				"SLOT_UNAVAILABLE",
+				"appointment slot is no longer available",
+			)
+
+		case errors.Is(err, services.ErrPastAppointment):
+			response.JSONError(
+				w,
+				http.StatusBadRequest,
+				"PAST_APPOINTMENT",
+				"appointment date cannot be in the past",
+			)
+
+		case errors.Is(err, services.ErrPractitionerNotFound):
+			response.JSONError(
+				w,
+				http.StatusNotFound,
+				"PRACTITIONER_NOT_FOUND",
+				"practitioner not found",
+			)
+
+		case errors.Is(err, services.ErrScheduleUnavailable):
+			response.JSONError(
+				w,
+				http.StatusBadRequest,
+				"SCHEDULE_UNAVAILABLE",
+				"practitioner is not available at the requested time",
+			)
 
 		default:
-			http.Error(w, "could not create appointment", http.StatusInternalServerError)
+			response.JSONError(
+				w,
+				http.StatusInternalServerError,
+				"INTERNAL_ERROR",
+				"an unexpected error occurred",
+			)
 		}
 
 		return
