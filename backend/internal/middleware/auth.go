@@ -43,19 +43,15 @@ func JWTAuth(secret string) func(http.Handler) http.Handler {
 				return
 			}
 
+			// WithValidMethods rejects any token not signed with HS256,
+			// including other HMAC variants (HS384, HS512) that would
+			// otherwise verify with the same secret.
 			token, err := jwt.Parse(
 				parts[1],
 				func(token *jwt.Token) (interface{}, error) {
-					if token.Method != jwt.SigningMethodHS256 {
-						response.JSONError(
-							w,
-							http.StatusUnauthorized,
-							"INVALID_TOKEN",
-							"invalid token signing method",
-						)
-					}
 					return []byte(secret), nil
 				},
+				jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
 			)
 
 			if err != nil || !token.Valid {
