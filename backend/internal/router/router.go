@@ -51,7 +51,7 @@ func New(db *pgxpool.Pool,
 						appHandler.List(w, r)
 
 					default:
-						http.NotFound(w, r)
+						handlers.MethodNotAllowed(w, http.MethodGet, http.MethodPost)
 					}
 				}),
 			),
@@ -72,7 +72,7 @@ func New(db *pgxpool.Pool,
 						appHandler.Reschedule(w, r)
 
 					default:
-						http.NotFound(w, r)
+						handlers.MethodNotAllowed(w, http.MethodPatch, http.MethodDelete)
 					}
 				}),
 			),

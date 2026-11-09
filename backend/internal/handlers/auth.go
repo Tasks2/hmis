@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 
 	"github.com/Tasks2/hmis/internal/response"
@@ -38,7 +39,8 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	var req RegisterRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+		response.JSONError(w, http.StatusBadRequest, "INVALID_REQUEST",
+			"invalid request body")
 		return
 	}
 
@@ -111,11 +113,9 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		http.Error(
-			w,
-			"could not create patient",
-			http.StatusInternalServerError,
-		)
+		log.Printf("register error: %v", err)
+		response.JSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR",
+			"Something went wrong on our side. Try again.")
 		return
 	}
 
@@ -133,11 +133,8 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var req LoginRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(
-			w,
-			"invalid request body",
-			http.StatusBadRequest,
-		)
+		response.JSONError(w, http.StatusBadRequest, "INVALID_REQUEST",
+			"invalid request body")
 		return
 	}
 
@@ -179,19 +176,14 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		if errors.Is(err, services.ErrInvalidCredentials) {
-			http.Error(
-				w,
-				"invalid credentials",
-				http.StatusUnauthorized,
-			)
+			response.JSONError(w, http.StatusUnauthorized, "INVALID_CREDENTIALS",
+				"Incorrect email or password.")
 			return
 		}
 
-		http.Error(
-			w,
-			"could not login",
-			http.StatusInternalServerError,
-		)
+		log.Printf("login error: %v", err)
+		response.JSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR",
+			"Something went wrong on our side. Try again.")
 		return
 	}
 
@@ -201,17 +193,13 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if err != nil {
-		http.Error(
-			w,
-			"could not generate token",
-			http.StatusInternalServerError,
-		)
+		log.Printf("token error: %v", err)
+		response.JSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR",
+			"Something went wrong on our side. Try again.")
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-
-	json.NewEncoder(w).Encode(map[string]string{
+	response.JSON(w, http.StatusOK, map[string]string{
 		"token": token,
 	})
 }

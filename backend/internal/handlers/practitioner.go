@@ -1,12 +1,13 @@
 package handlers
 
 import (
-	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
-	"time"
 
+	"github.com/Tasks2/hmis/internal/response"
 	"github.com/Tasks2/hmis/internal/services"
+	"github.com/Tasks2/hmis/internal/validation"
 )
 
 type PractitionerHandler struct {
@@ -19,63 +20,83 @@ func NewPractitionerHandler(
 	return &PractitionerHandler{service: service}
 }
 
+// List returns every practitioner.
 func (h *PractitionerHandler) List(w http.ResponseWriter, r *http.Request) {
-	practitioners, err := h.service.GetPractitioners(r.Context())
-
-	if err != nil {
-		http.Error(w, "could not retrieve practitioners", http.StatusInternalServerError)
+	if r.Method != http.MethodGet {
+		MethodNotAllowed(w, http.MethodGet)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(practitioners)
+	practitioners, err := h.service.GetPractitioners(r.Context())
+	if err != nil {
+		log.Printf("list practitioners error: %v", err)
+		response.JSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR",
+			"Something went wrong on our side. Try again.")
+		return
+	}
+
+	if practitioners == nil {
+		practitioners = []services.Practitioner{}
+	}
+
+	response.JSON(w, http.StatusOK, practitioners)
 }
 
+// Availability returns a practitioner's free slots on one date:
+// GET /api/v1/practitioners/{id}/availability?date=YYYY-MM-DD
 func (h *PractitionerHandler) Availability(w http.ResponseWriter, r *http.Request) {
-	path := strings.TrimPrefix(
-		r.URL.Path,
-		"/api/v1/practitioners/",
-	)
-
+	path := strings.TrimPrefix(r.URL.Path, "/api/v1/practitioners/")
 	parts := strings.Split(path, "/")
 
-	if len(parts) != 2 || parts[1] != "availability" {
-		http.NotFound(w, r)
+	if len(parts) != 2 || parts[0] == "" || parts[1] != "availability" {
+		response.JSONError(w, http.StatusNotFound, "NOT_FOUND",
+			"endpoint not found")
+		return
+	}
+
+	if r.Method != http.MethodGet {
+		MethodNotAllowed(w, http.MethodGet)
 		return
 	}
 
 	practitionerID := parts[0]
-
 	dateString := r.URL.Query().Get("date")
 
-	if dateString == "" {
-		http.Error(w, "date is required", http.StatusBadRequest)
+	if !validation.Required(dateString) {
+		response.JSONError(w, http.StatusBadRequest, "DATE_REQUIRED",
+			"date is required")
 		return
 	}
 
-	date, err := time.Parse("2006-01-02", dateString)
+	date, err := validation.Date(dateString)
 	if err != nil {
-		http.Error(w, "invalid date", http.StatusBadRequest)
+		response.JSONError(w, http.StatusBadRequest, "INVALID_DATE",
+			"date must use YYYY-MM-DD format")
 		return
 	}
 
-	slots, err := h.service.GetAvailability(
-		r.Context(),
-		practitionerID,
-		date,
-	)
-
+	slots, err := h.service.GetAvailability(r.Context(), practitionerID, date)
 	if err != nil {
-		http.Error(w, "could not retrieve availability", http.StatusInternalServerError)
+		log.Printf("availability error: %v", err)
+		response.JSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR",
+			"Something went wrong on our side. Try again.")
 		return
 	}
 
-	response := map[string]interface{}{
+	if slots == nil {
+		slots = []services.AvailableSlot{}
+	}
+
+	response.JSON(w, http.StatusOK, map[string]any{
 		"practitioner_id": practitionerID,
 		"date":            dateString,
 		"slots":           slots,
-	}
+	})
+}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+// MethodNotAllowed writes a JSON 405 with the Allow header set.
+func MethodNotAllowed(w http.ResponseWriter, allowed ...string) {
+	w.Header().Set("Allow", strings.Join(allowed, ", "))
+	response.JSONError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED",
+		"method not allowed")
 }

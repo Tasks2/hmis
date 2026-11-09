@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -34,8 +35,6 @@ type RescheduleAppointmentRequest struct {
 	StartTime       string `json:"start_time"`
 }
 
-//Create Appointments
-
 func getUserID(r *http.Request) (string, bool) {
 	userID, ok := r.Context().Value(middleware.UserIDKey).(string)
 
@@ -46,321 +45,221 @@ func getUserID(r *http.Request) (string, bool) {
 	return userID, true
 }
 
-func (h *AppointmentHandler) Create(w http.ResponseWriter, r *http.Request) {
+// writeAppointmentError turns an error from the appointment service into a
+// JSON error response. Every appointment handler uses it, so the same
+// error always gets the same status code and message.
+func writeAppointmentError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, services.ErrPatientNotFound):
+		response.JSONError(w, http.StatusNotFound, "PATIENT_NOT_FOUND",
+			"No patient profile is linked to this account.")
 
+	case errors.Is(err, services.ErrAppointmentNotFound):
+		response.JSONError(w, http.StatusNotFound, "APPOINTMENT_NOT_FOUND",
+			"Appointment not found, or it is no longer booked.")
+
+	case errors.Is(err, services.ErrPractitionerNotFound):
+		response.JSONError(w, http.StatusNotFound, "PRACTITIONER_NOT_FOUND",
+			"Practitioner not found.")
+
+	case errors.Is(err, services.ErrSlotUnavailable):
+		response.JSONError(w, http.StatusConflict, "SLOT_UNAVAILABLE",
+			"This slot has just been booked. Choose another time.")
+
+	case errors.Is(err, services.ErrPastAppointment):
+		response.JSONError(w, http.StatusBadRequest, "PAST_APPOINTMENT",
+			"Appointment date can't be in the past.")
+
+	case errors.Is(err, services.ErrScheduleUnavailable):
+		response.JSONError(w, http.StatusBadRequest, "SCHEDULE_UNAVAILABLE",
+			"The practitioner isn't available at that time.")
+
+	case errors.Is(err, validation.ErrInvalidTime):
+		response.JSONError(w, http.StatusBadRequest, "INVALID_TIME",
+			"start_time must use HH:MM format, for example 09:30.")
+
+	case errors.Is(err, validation.ErrInvalidSlot):
+		response.JSONError(w, http.StatusBadRequest, "INVALID_SLOT",
+			"Appointments start on the hour or half hour, for example 09:00 or 09:30.")
+
+	default:
+		log.Printf("appointment error: %v", err)
+		response.JSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR",
+			"Something went wrong on our side. Try again.")
+	}
+}
+
+// requireUserID writes a 401 and returns false when the request has no
+// authenticated user. The JWT middleware normally guarantees one.
+func requireUserID(w http.ResponseWriter, r *http.Request) (string, bool) {
 	userID, ok := getUserID(r)
 	if !ok {
-		response.JSONError(
-			w,
-			http.StatusUnauthorized,
-			"UNAUTHORIZED",
-			"authentication is required",
-		)
+		response.JSONError(w, http.StatusUnauthorized, "UNAUTHORIZED",
+			"authentication is required")
+	}
+
+	return userID, ok
+}
+
+// parseSlot validates the date and start time shared by create and
+// reschedule requests.
+func parseSlot(w http.ResponseWriter, date, startTime string) (time.Time, bool) {
+	if !validation.Required(date) {
+		response.JSONError(w, http.StatusBadRequest, "DATE_REQUIRED",
+			"appointment_date is required")
+		return time.Time{}, false
+	}
+
+	if !validation.Required(startTime) {
+		response.JSONError(w, http.StatusBadRequest, "TIME_REQUIRED",
+			"start_time is required")
+		return time.Time{}, false
+	}
+
+	parsed, err := validation.Date(date)
+	if err != nil {
+		response.JSONError(w, http.StatusBadRequest, "INVALID_DATE",
+			"appointment_date must use YYYY-MM-DD format")
+		return time.Time{}, false
+	}
+
+	return parsed, true
+}
+
+func appointmentIDFromPath(r *http.Request) string {
+	id := strings.TrimPrefix(r.URL.Path, "/api/v1/appointments/")
+	return strings.TrimSuffix(id, "/reschedule")
+}
+
+// Create books an appointment.
+func (h *AppointmentHandler) Create(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUserID(w, r)
+	if !ok {
 		return
 	}
 
 	var req CreateAppointmentRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.JSONError(
-			w,
-			http.StatusBadRequest,
-			"INVALID_REQUEST",
-			"invalid request body",
-		)
+		response.JSONError(w, http.StatusBadRequest, "INVALID_REQUEST",
+			"invalid request body")
 		return
 	}
 
 	if !validation.Required(req.PractitionerID) {
-		response.JSONError(
-			w,
-			http.StatusBadRequest,
-			"PRACTITIONER_ID_REQUIRED",
-			"practitioner_id is required",
-		)
+		response.JSONError(w, http.StatusBadRequest, "PRACTITIONER_ID_REQUIRED",
+			"practitioner_id is required")
 		return
 	}
 
-	if !validation.Required(req.AppointmentDate) {
-		response.JSONError(
-			w,
-			http.StatusBadRequest,
-			"DATE_REQUIRED",
-			"appointment_date is required",
-		)
+	date, ok := parseSlot(w, req.AppointmentDate, req.StartTime)
+	if !ok {
 		return
 	}
 
-	if !validation.Required(req.StartTime) {
-		response.JSONError(
-			w,
-			http.StatusBadRequest,
-			"TIME_REQUIRED",
-			"start_time is required",
-		)
-		return
-	}
-
-	date, err := validation.Date(req.AppointmentDate)
-
-	if err != nil {
-		response.JSONError(
-			w,
-			http.StatusBadRequest,
-			"INVALID_DATE",
-			"appointment_date must use YYYY-MM-DD format",
-		)
-		return
-	}
-
-	if !validation.Required(req.PractitionerID) {
-		response.JSONError(
-			w,
-			http.StatusBadRequest,
-			"PRACTITIONER_ID_REQUIRED",
-			"practitioner_id is required",
-		)
-		return
-	}
-
-	if !validation.Required(req.AppointmentDate) {
-		response.JSONError(
-			w,
-			http.StatusBadRequest,
-			"DATE_REQUIRED",
-			"appointment_date is required",
-		)
-		return
-	}
-
-	if !validation.Required(req.StartTime) {
-		response.JSONError(
-			w,
-			http.StatusBadRequest,
-			"TIME_REQUIRED",
-			"start_time is required",
-		)
-		return
-	}
-
-	err = h.service.Create(
+	err := h.service.Create(
 		r.Context(),
 		userID,
 		req.PractitionerID,
 		date,
 		req.StartTime,
 	)
-
 	if err != nil {
-		switch {
-		case errors.Is(err, services.ErrPatientNotFound):
-			http.Error(w, "patient not found", http.StatusNotFound)
-
-		case errors.Is(err, services.ErrSlotUnavailable):
-			response.JSONError(
-				w,
-				http.StatusConflict,
-				"SLOT_UNAVAILABLE",
-				"appointment slot is no longer available",
-			)
-
-		case errors.Is(err, services.ErrPastAppointment):
-			response.JSONError(
-				w,
-				http.StatusBadRequest,
-				"PAST_APPOINTMENT",
-				"appointment date cannot be in the past",
-			)
-
-		case errors.Is(err, services.ErrPractitionerNotFound):
-			response.JSONError(
-				w,
-				http.StatusNotFound,
-				"PRACTITIONER_NOT_FOUND",
-				"practitioner not found",
-			)
-
-		case errors.Is(err, services.ErrScheduleUnavailable):
-			response.JSONError(
-				w,
-				http.StatusBadRequest,
-				"SCHEDULE_UNAVAILABLE",
-				"practitioner is not available at the requested time",
-			)
-
-		default:
-			response.JSONError(
-				w,
-				http.StatusInternalServerError,
-				"INTERNAL_ERROR",
-				"an unexpected error occurred",
-			)
-		}
-
+		writeAppointmentError(w, err)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-
-	json.NewEncoder(w).Encode(map[string]string{
+	response.JSON(w, http.StatusCreated, map[string]string{
 		"message": "appointment booked successfully",
 	})
 }
 
-// Get Appointments
+// List returns the patient's appointments.
 func (h *AppointmentHandler) List(w http.ResponseWriter, r *http.Request) {
-
-	userID, ok := getUserID(r)
+	userID, ok := requireUserID(w, r)
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	appointments, err := h.service.GetPatientAppointments(
-		r.Context(),
-		userID,
-	)
-
+	appointments, err := h.service.GetPatientAppointments(r.Context(), userID)
 	if err != nil {
-		if errors.Is(err, services.ErrPatientNotFound) {
-			http.Error(w, "patient not found", http.StatusNotFound)
-			return
-		}
-
-		http.Error(
-			w,
-			"could not retrieve appointments",
-			http.StatusInternalServerError,
-		)
+		writeAppointmentError(w, err)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
+	// Return [] instead of null when the patient has no appointments.
+	if appointments == nil {
+		appointments = []services.Appointment{}
+	}
 
-	json.NewEncoder(w).Encode(appointments)
+	response.JSON(w, http.StatusOK, appointments)
 }
 
-// Cancel Appointments
+// Cancel cancels one of the patient's booked appointments.
 func (h *AppointmentHandler) Cancel(w http.ResponseWriter, r *http.Request) {
-
-	userID, ok := getUserID(r)
+	userID, ok := requireUserID(w, r)
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	appointmentID := strings.TrimPrefix(
-		r.URL.Path,
-		"/api/v1/appointments/",
-	)
-
+	appointmentID := appointmentIDFromPath(r)
 	if appointmentID == "" {
-		http.Error(w, "appointment id is required", http.StatusBadRequest)
+		response.JSONError(w, http.StatusBadRequest, "APPOINTMENT_ID_REQUIRED",
+			"appointment id is required")
 		return
 	}
 
-	err := h.service.Cancel(
-		r.Context(),
-		userID,
-		appointmentID,
-	)
-
-	if err != nil {
-		if errors.Is(err, services.ErrAppointmentNotFound) {
-			http.Error(w, "appointment not found", http.StatusNotFound)
-			return
-		}
-
-		http.Error(
-			w,
-			"could not cancel appointment",
-			http.StatusInternalServerError,
-		)
+	if err := h.service.Cancel(r.Context(), userID, appointmentID); err != nil {
+		writeAppointmentError(w, err)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-
-	json.NewEncoder(w).Encode(map[string]string{
+	response.JSON(w, http.StatusOK, map[string]string{
 		"message": "appointment cancelled successfully",
 	})
 }
 
-// Reschedule appointment
-func (h *AppointmentHandler) Reschedule(
-	w http.ResponseWriter,
-	r *http.Request,
-) {
-
-	userID, ok := getUserID(r)
+// Reschedule moves one of the patient's booked appointments to a new
+// date and time with the same practitioner.
+func (h *AppointmentHandler) Reschedule(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUserID(w, r)
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	appointmentID := strings.TrimPrefix(
-		r.URL.Path,
-		"/api/v1/appointments/",
-	)
-
-	appointmentID = strings.TrimSuffix(
-		appointmentID,
-		"/reschedule",
-	)
-
+	appointmentID := appointmentIDFromPath(r)
 	if appointmentID == "" {
-		http.Error(w, "appointment id is required", http.StatusBadRequest)
+		response.JSONError(w, http.StatusBadRequest, "APPOINTMENT_ID_REQUIRED",
+			"appointment id is required")
 		return
 	}
 
 	var req RescheduleAppointmentRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+		response.JSONError(w, http.StatusBadRequest, "INVALID_REQUEST",
+			"invalid request body")
 		return
 	}
 
-	date, err := time.Parse(
-		"2006-01-02",
-		req.AppointmentDate,
-	)
-
-	if err != nil {
-		http.Error(w, "invalid appointment date", http.StatusBadRequest)
+	date, ok := parseSlot(w, req.AppointmentDate, req.StartTime)
+	if !ok {
 		return
 	}
 
-	err = h.service.Reschedule(
+	err := h.service.Reschedule(
 		r.Context(),
 		userID,
 		appointmentID,
 		date,
 		req.StartTime,
 	)
-
 	if err != nil {
-		switch {
-		case errors.Is(err, services.ErrAppointmentNotFound):
-			http.Error(w, "appointment not found", http.StatusNotFound)
-
-		case errors.Is(err, services.ErrSlotUnavailable):
-			http.Error(w, "appointment slot unavailable", http.StatusConflict)
-
-		default:
-			http.Error(
-				w,
-				"could not reschedule appointment",
-				http.StatusInternalServerError,
-			)
-		}
-
+		writeAppointmentError(w, err)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-
-	json.NewEncoder(w).Encode(map[string]string{
+	response.JSON(w, http.StatusOK, map[string]string{
 		"message": "appointment rescheduled successfully",
 	})
 }

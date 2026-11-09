@@ -2,10 +2,10 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"time"
 
+	"github.com/Tasks2/hmis/internal/response"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -20,19 +20,14 @@ func Health(db *pgxpool.Pool) http.HandlerFunc {
 		defer cancel()
 
 		if err := db.Ping(ctx); err != nil {
-			w.WriteHeader(http.StatusServiceUnavailable)
-
-			json.NewEncoder(w).Encode(HealthResponse{
+			response.JSON(w, http.StatusServiceUnavailable, HealthResponse{
 				Status:   "unhealthy",
 				Database: "unavailable",
 			})
-
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-
-		json.NewEncoder(w).Encode(HealthResponse{
+		response.JSON(w, http.StatusOK, HealthResponse{
 			Status:   "ok",
 			Database: "ok",
 		})
