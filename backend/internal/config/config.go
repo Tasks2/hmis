@@ -5,6 +5,10 @@ import (
 	"os"
 )
 
+// MinJWTSecretLength is the shortest JWT_SECRET the server accepts.
+// HS256 needs at least 256 bits (32 bytes) of key to be secure.
+const MinJWTSecretLength = 32
+
 type Config struct {
 	Port        string
 	DatabaseURL string
@@ -23,6 +27,16 @@ func Load() (Config, error) {
 	}
 
 	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		return Config{}, fmt.Errorf("JWT_SECRET is required")
+	}
+
+	if len(jwtSecret) < MinJWTSecretLength {
+		return Config{}, fmt.Errorf(
+			"JWT_SECRET must be at least %d characters (generate one with: openssl rand -base64 48)",
+			MinJWTSecretLength,
+		)
+	}
 
 	return Config{
 		Port:        port,
