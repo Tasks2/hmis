@@ -56,7 +56,7 @@ func main() {
 
 	server := &http.Server{
 		Addr:    ":" + cfg.Port,
-		Handler: middleware.RequestLogger(appRouter),
+		Handler: middleware.CORS(middleware.RequestLogger(appRouter)),
 	}
 
 	log.Printf("HMIS API listening on http://localhost:%s", cfg.Port)
