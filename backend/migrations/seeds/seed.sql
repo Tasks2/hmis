@@ -1,7 +1,10 @@
+-- Development data only. Every seeded user's password is: Password123!
+-- (password_hash below is the bcrypt hash of that password.)
+
 INSERT INTO users (email, password_hash, role)
 VALUES
-    ('patient@example.com', 'development-only', 'PATIENT'),
-    ('doctor@example.com', 'development-only', 'PRACTITIONER');
+    ('patient@example.com', '$2a$10$ac47aIkRzOKx19TxZe7.TelCHGk4KhtZx.PYP69WRbunEW6zGhxwa', 'PATIENT'),
+    ('doctor@example.com', '$2a$10$ac47aIkRzOKx19TxZe7.TelCHGk4KhtZx.PYP69WRbunEW6zGhxwa', 'PRACTITIONER');
 
 INSERT INTO patients (user_id, first_name, last_name)
 SELECT id, 'John', 'Doe'
